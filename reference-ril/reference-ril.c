@@ -132,6 +132,102 @@ static int s_expectAnswer = 0;
 static void pollSIMState (void *param);
 static void setRadioState(RIL_RadioState newState);
 
+static int InSpeakerMode;
+
+void loudspeaker_vol(int vol)
+{
+	char buf[100];
+	snprintf(buf, sizeof(buf), "AT+XDRV=0,1,%d,2", vol);
+	at_send_command(buf, NULL);
+}
+
+void speaker_vol(int vol)
+{
+	char buf[100];
+	snprintf(buf, sizeof(buf), "AT+XDRV=0,1,%d,0", vol);
+	at_send_command(buf, NULL);
+}
+
+static void soundPhoneMode()
+{
+	if(!InSpeakerMode)
+		return;
+
+	at_send_command("AT+XDRV=0,4", NULL);
+	at_send_command("AT+XDRV=0,20,0", NULL);
+
+	// mute everything?
+	at_send_command("AT+XDRV=0,1,0,0", NULL);
+	at_send_command("AT+XDRV=0,1,0,1", NULL);
+	at_send_command("AT+XDRV=0,1,0,2", NULL);
+	at_send_command("AT+XDRV=0,1,0,6", NULL);
+
+	// I really don't know
+	at_send_command("AT+XDRV=0,24,1,1", NULL);
+
+	// note this is different from before
+	at_send_command("AT+XDRV=0,0,1,1", NULL);
+
+	// microphone volume?
+	at_send_command("AT+XDRV=0,1,100,1", NULL);
+
+	loudspeaker_vol(40);
+	speaker_vol(68);
+
+	// clock
+	// In general, lower is slower and higher is faster, but at some point it loops around.
+	// This may mean the value is a bitset, e.g., AT+XDRV=0,2,2,29 will set it to half speed
+	at_send_command("AT+XDRV=0,2,2,10", NULL);
+
+	// channels?
+	at_send_command("AT+XDRV=0,9,2", NULL);
+
+	// enable i2s?
+	at_send_command("AT+XDRV=0,20,1", NULL);
+
+	// unmute?
+	at_send_command("AT+XDRV=0,3,0", NULL);
+
+	InSpeakerMode = 0;
+}
+
+static void soundSpeakerMode()
+{
+	if(InSpeakerMode)
+		return;
+
+	at_send_command("AT+XDRV=0,41,25", NULL);
+
+	// mute everything?
+	at_send_command("AT+XDRV=0,1,0,0", NULL);
+	at_send_command("AT+XDRV=0,1,0,1", NULL);
+	at_send_command("AT+XDRV=0,1,0,2", NULL);
+	at_send_command("AT+XDRV=0,1,0,6", NULL);
+
+	// I really don't know
+	at_send_command("AT+XDRV=0,24,1,1", NULL);
+	at_send_command("AT+XDRV=0,0,2,2", NULL);
+
+	loudspeaker_vol(100);
+	speaker_vol(68);
+
+	// clock
+	// In general, lower is slower and higher is faster, but at some point it loops around.
+	// This may mean the value is a bitset, e.g., AT+XDRV=0,2,2,29 will set it to half speed
+	at_send_command("AT+XDRV=0,2,2,10", NULL);
+
+	// channels?
+	at_send_command("AT+XDRV=0,9,2", NULL);
+
+	// enable i2s?
+	at_send_command("AT+XDRV=0,20,1", NULL);
+
+	// unmute?
+	at_send_command("AT+XDRV=0,3,0", NULL);
+
+	InSpeakerMode = 1;
+}
+
 static int clccStateToRILState(int state, RIL_CallState *p_state)
 
 {
@@ -247,17 +343,20 @@ static void requestRadioPower(void *data, size_t datalen, RIL_Token t)
     int onOff;
 
     int err;
-    ATResponse *p_response = NULL;
+
+    // FIXME: These seem to lock up baseband.
+
+//    ATResponse *p_response = NULL;
 
     assert (datalen >= sizeof(int *));
     onOff = ((int *)data)[0];
 
     if (onOff == 0 && sState != RADIO_STATE_OFF) {
-        err = at_send_command("AT+CFUN=0", &p_response);
-       if (err < 0 || p_response->success == 0) goto error;
+/*        err = at_send_command("AT+CFUN=0", &p_response);
+       if (err < 0 || p_response->success == 0) goto error;*/
         setRadioState(RADIO_STATE_OFF);
     } else if (onOff > 0 && sState == RADIO_STATE_OFF) {
-        err = at_send_command("AT+CFUN=1", &p_response);
+/*        err = at_send_command("AT+CFUN=1", &p_response);
         if (err < 0|| p_response->success == 0) {
             // Some stacks return an error when there is no SIM,
             // but they really turn the RF portion on
@@ -267,15 +366,15 @@ static void requestRadioPower(void *data, size_t datalen, RIL_Token t)
             if (isRadioOn() != 1) {
                 goto error;
             }
-        }
+        }*/
         setRadioState(RADIO_STATE_SIM_NOT_READY);
     }
 
-    at_response_free(p_response);
+//    at_response_free(p_response);
     RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
     return;
 error:
-    at_response_free(p_response);
+//    at_response_free(p_response);
     RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 }
 
@@ -541,6 +640,14 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
             needRepoll = 1;
         }
 
+        if (p_calls[countValidCalls].state == RIL_CALL_ACTIVE)
+	{
+		soundPhoneMode();
+		at_send_command("AT+XDRV=4,0,0,0,0,0", NULL);
+		at_send_command("AT+XDRV=0,4\r\n", NULL);
+		at_send_command("AT+XDRV=0,20,0\r\n", NULL);
+	}
+
         countValidCalls++;
     }
 
@@ -574,6 +681,11 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
     s_expectAnswer = 0;
     s_repollCallsCount = 0;
 #endif /*WORKAROUND_ERRONEOUS_ANSWER*/
+
+    if(!countValidCalls)
+    {
+	soundSpeakerMode();    
+    }
 
     RIL_onRequestComplete(t, RIL_E_SUCCESS, pp_calls,
             countValidCalls * sizeof (RIL_Call *));
@@ -610,6 +722,8 @@ static void requestDial(void *data, size_t datalen, RIL_Token t)
         default:
         case 0: clir = ""; break;   /*subscription default*/
     }
+
+    soundPhoneMode();
 
     asprintf(&cmd, "ATD%s%s;", p_dial->address, clir);
 
@@ -1866,6 +1980,8 @@ static void initializeCallback(void *param)
 
 #endif /* USE_TI_COMMANDS */
 
+    InSpeakerMode = 0;
+    soundSpeakerMode();
 
     /* assume radio is off on error */
     if (isRadioOn() > 0) {
@@ -2035,7 +2151,9 @@ mainLoop(void *param)
                     /* disable echo on serial ports */
                     struct termios  ios;
                     tcgetattr( fd, &ios );
+                    ios.c_cflag = B921600 | CRTSCTS | CS8 | CLOCAL | CREAD;
                     ios.c_lflag = 0;  /* disable ECHO, ICANON, etc... */
+		    tcflush(fd, TCIFLUSH);
                     tcsetattr( fd, TCSANOW, &ios );
                 }
             }
