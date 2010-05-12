@@ -134,6 +134,11 @@ static void setRadioState(RIL_RadioState newState);
 
 static int InSpeakerMode;
 
+#define IPHONE_2G 0
+#define IPHONE_3G 1
+
+static int Platform;
+
 void loudspeaker_vol(int vol)
 {
 	char buf[100];
@@ -153,8 +158,14 @@ static void soundPhoneMode()
 	if(!InSpeakerMode)
 		return;
 
-	at_send_command("AT+XDRV=0,4", NULL);
-	at_send_command("AT+XDRV=0,20,0", NULL);
+	if(Platform == IPHONE_3G)
+	{
+		at_send_command("AT+XDRV=0,8,0,0", NULL);
+	} else
+	{
+		at_send_command("AT+XDRV=0,4", NULL);
+		at_send_command("AT+XDRV=0,20,0", NULL);
+	}
 
 	// mute everything?
 	at_send_command("AT+XDRV=0,1,0,0", NULL);
@@ -172,6 +183,12 @@ static void soundPhoneMode()
 	at_send_command("AT+XDRV=0,1,100,1", NULL);
 
 	loudspeaker_vol(40);
+
+	if(Platform == IPHONE_3G)
+	{
+		at_send_command("AT+XDRV=0,8,1,0", NULL);
+	}
+
 	speaker_vol(68);
 
 	// clock
@@ -197,6 +214,12 @@ static void soundSpeakerMode()
 		return;
 
 	at_send_command("AT+XDRV=0,41,25", NULL);
+
+	if(Platform == IPHONE_3G)
+	{
+		InSpeakerMode = 1;
+		return;
+	}
 
 	// mute everything?
 	at_send_command("AT+XDRV=0,1,0,0", NULL);
@@ -643,7 +666,12 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
         if (p_calls[countValidCalls].state == RIL_CALL_ACTIVE)
 	{
 		soundPhoneMode();
-		at_send_command("AT+XDRV=4,0,0,0,0,0", NULL);
+
+		if(Platform != IPHONE_3G)
+		{
+			at_send_command("AT+XDRV=4,0,0,0,0,0", NULL);
+		}
+
 		at_send_command("AT+XDRV=0,4\r\n", NULL);
 		at_send_command("AT+XDRV=0,20,0\r\n", NULL);
 	}
@@ -2151,7 +2179,10 @@ mainLoop(void *param)
                     /* disable echo on serial ports */
                     struct termios  ios;
                     tcgetattr( fd, &ios );
-                    ios.c_cflag = B921600 | CRTSCTS | CS8 | CLOCAL | CREAD;
+		    if(Platform == IPHONE_3G)
+			    ios.c_cflag = B115200 | CRTSCTS | CS8 | CLOCAL | CREAD;
+		    else
+			    ios.c_cflag = B921600 | CRTSCTS | CS8 | CLOCAL | CREAD;
                     ios.c_lflag = 0;  /* disable ECHO, ICANON, etc... */
 		    tcflush(fd, TCIFLUSH);
                     tcsetattr( fd, TCSANOW, &ios );
@@ -2197,7 +2228,8 @@ const RIL_RadioFunctions *RIL_Init(const struct RIL_Env *env, int argc, char **a
 
     s_rilenv = env;
 
-    while ( -1 != (opt = getopt(argc, argv, "p:d:s:"))) {
+    Platform = IPHONE_2G;
+    while ( -1 != (opt = getopt(argc, argv, "p:d:s:3"))) {
         switch (opt) {
             case 'p':
                 s_port = atoi(optarg);
@@ -2219,11 +2251,17 @@ const RIL_RadioFunctions *RIL_Init(const struct RIL_Env *env, int argc, char **a
                 LOGI("Opening socket %s\n", s_device_path);
             break;
 
+	    case '3':
+	        Platform = IPHONE_3G;
+	    break;
+
             default:
                 usage(argv[0]);
                 return NULL;
         }
     }
+
+    LOGI("Platform %s\n", (Platform == IPHONE_3G) ? "iPhone 3G" : "iPhone 2G");
 
     if (s_port < 0 && s_device_path == NULL) {
         usage(argv[0]);
@@ -2264,10 +2302,16 @@ int main (int argc, char **argv)
                 LOGI("Opening socket %s\n", s_device_path);
             break;
 
+	    case '3':
+	        Platform = IPHONE_3G;
+	    break;
+
             default:
                 usage(argv[0]);
         }
     }
+
+    LOGI("Platform %s\n", (Platform == IPHONE_3G) ? "iPhone 3G" : "iPhone 2G");
 
     if (s_port < 0 && s_device_path == NULL) {
         usage(argv[0]);
