@@ -41,6 +41,7 @@
 
 /* pathname returned from RIL_REQUEST_SETUP_DATA_CALL / RIL_REQUEST_SETUP_DEFAULT_PDP */
 #define PPP_TTY_PATH "/dev/omap_csmi_tty1"
+#define PATH_ACTIVATIONRECORD "/system/lib/wildcard_record.plist"
 
 #ifdef USE_TI_COMMANDS
 
@@ -71,6 +72,7 @@ static int onSupports (int requestCode);
 static void onCancel (RIL_Token t);
 static const char *getVersion();
 static int isRadioOn();
+static int unlockBaseBand();
 static SIM_Status getSIMStatus();
 static int getCardStatus(RIL_CardStatus **pp_card_status);
 static void freeCardStatus(RIL_CardStatus *p_card_status);
@@ -1712,6 +1714,78 @@ setRadioState(RIL_RadioState newState)
     }
 }
 
+static int unlockBaseBand()
+{
+	char buf[1000000];
+	int len;
+	int zero=0;
+	int iCnt=1;
+	char cUnlockString[2049];
+	char cUnlockPart[513];
+
+	FILE *f = fopen(PATH_ACTIVATIONRECORD, "rb");
+	if(f == 0)
+	{
+		LOGD("No Activation Report Found");
+		return -1;
+	}
+	len = fread(buf, 1, 1000000, f);
+	fclose(f);
+
+	if(len <= 0)
+	{
+		LOGD("No Activation Record Found");
+		return -1;
+	}
+
+	int i;
+	short iFoundRecord = 0;
+	for(i = 0; i < (len-strlen("WildcardTicket")); i++) {
+		if(memcmp(&buf[i], "WildcardTicket", strlen("WildcardTicket")) == 0)
+		{
+			iFoundRecord = 1;
+			break;
+		}
+	}
+	if(iFoundRecord == 1)
+	{
+		memcpy(cUnlockString, &buf[i+0x13], 2048);
+		for(i = 0; i < 2048; i++) {
+			if(cUnlockString[i] == '"') zero=1;
+			if(zero == 1) cUnlockString[i]='0';
+		}
+		cUnlockString[2048]='\0';
+
+		LOGD("Sending 1st Unlock Command");
+		//at+xlck=0
+		at_send_command("AT+XLCK=0", NULL);
+		
+		char * cmd;
+
+		for(i = 0; i < 2048; i+=512) {
+			LOGD("Sending Unlock Payload");
+			strncpy(cUnlockPart, &cUnlockString[i], 512);
+			cUnlockPart[512]='\0';
+			LOGD("Sending Unlock Payload");
+			asprintf(&cmd, "AT+XLCK=1,%d,\"%s\"", iCnt, cUnlockPart);
+			at_send_command(cmd, NULL);
+			free(cmd);
+
+			iCnt++;
+		}
+		//at+xlck=2
+		LOGD("Sending Last Unlock Command");
+		at_send_command("AT+XLCK=2", NULL);
+		
+		return 0;
+	}
+	else
+	{
+		LOGD("No Activation Record Found.");
+		return -1;
+	}
+}
+
 /** Returns SIM_NOT_READY on error */
 static SIM_Status 
 getSIMStatus()
@@ -1939,10 +2013,12 @@ error:
  */
 static void initializeCallback(void *param)
 {
-    ATResponse *p_response = NULL;
+	ATResponse *p_response = NULL;
     int err;
 
     setRadioState (RADIO_STATE_OFF);
+    
+    err = unlockBaseBand();
 
     at_handshake();
 
