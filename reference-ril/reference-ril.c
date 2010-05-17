@@ -41,7 +41,7 @@
 
 /* pathname returned from RIL_REQUEST_SETUP_DATA_CALL / RIL_REQUEST_SETUP_DEFAULT_PDP */
 #define PPP_TTY_PATH "/dev/omap_csmi_tty1"
-#define PATH_ACTIVATIONRECORD "/system/lib/wildcard_record.plist"
+#define PATH_ACTIVATIONRECORD "/host/root/Library/Lockdown/activation_records/wildcard_record.plist"
 
 #ifdef USE_TI_COMMANDS
 
