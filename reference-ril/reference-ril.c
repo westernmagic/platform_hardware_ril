@@ -1740,18 +1740,36 @@ static int unlockBaseBand()
 
 	int i;
 	short iFoundRecord = 0;
-	for(i = 0; i < (len-strlen("WildcardTicket")); i++) {
-		if(memcmp(&buf[i], "WildcardTicket", strlen("WildcardTicket")) == 0)
+	short recordOffset = 0;
+	for(i = 0; i < (len-strlen("\"WildcardTicket\" = \"")); i++) {
+		if(memcmp(&buf[i], "\"WildcardTicket\" = \"", strlen("\"WildcardTicket\" = \"")) == 0)
 		{
 			iFoundRecord = 1;
+			recordOffset = strlen("\"WildcardTicket\" = \"") ;
 			break;
 		}
 	}
-	if(iFoundRecord == 1)
+	
+	if( iFoundRecord != 1 ) {
+		for(i = 0; i < (len-strlen("<key>WildcardTicket</key>")); i++) {
+			if(memcmp(&buf[i], "<key>WildcardTicket</key>", strlen("<key>WildcardTicket</key>")) == 0)
+			{
+				for(i ; i < (len-strlen("<string>")); i++) {
+					if(memcmp(&buf[i], "<string>", strlen("<string>")) == 0)
+					{
+						iFoundRecord = 2;
+						recordOffset = strlen("<string>") ;
+						break;
+					}
+				}
+			}
+		}
+	}
+	if(iFoundRecord == 1 || iFoundRecord == 2)
 	{
-		memcpy(cUnlockString, &buf[i+0x13], 2048);
+		memcpy(cUnlockString, &buf[i+recordOffset], 2048);
 		for(i = 0; i < 2048; i++) {
-			if(cUnlockString[i] == '"') zero=1;
+			if(cUnlockString[i] == '"' || cUnlockString[i] == '<') zero=1;
 			if(zero == 1) cUnlockString[i]='0';
 		}
 		cUnlockString[2048]='\0';
